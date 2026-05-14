@@ -35,6 +35,7 @@ pub struct AppState {
     pub latest_error: Mutex<Option<String>>,
     pub settings: Mutex<AppSettings>,
     pub is_capturing: Arc<AtomicBool>,
+    pub controller_running: Arc<AtomicBool>,
 }
 
 struct SaveDebouncer {
@@ -186,18 +187,35 @@ fn process_actions(app_state: &Arc<AppState>, debouncer: &Arc<Mutex<SaveDebounce
                     trigger_save = true;
                 }
             }
-            AppAction::CopyToClipboard(text) => match arboard::Clipboard::new() {
-                Ok(mut clipboard) => {
-                    if let Err(error) = clipboard.set_text(text.to_string()) {
+            AppAction::CopyTextItem(id) => {
+                let text = {
+                    let clipboard = app_state.clipboard.lock().unwrap();
+                    let text = clipboard.items().find_map(|stored| match &stored.item {
+                        ClipboardItem::Text(text) if stored.id == id => Some(text.clone()),
+                        _ => None,
+                    });
+                    text
+                };
+
+                let Some(text) = text else {
+                    *app_state.latest_error.lock().unwrap() =
+                        Some("Clipboard item is not available as text.".into());
+                    continue;
+                };
+
+                match arboard::Clipboard::new() {
+                    Ok(mut clipboard) => {
+                        if let Err(error) = clipboard.set_text(text.to_string()) {
+                            *app_state.latest_error.lock().unwrap() =
+                                Some(format!("Failed to write to OS clipboard: {}", error));
+                        }
+                    }
+                    Err(error) => {
                         *app_state.latest_error.lock().unwrap() =
-                            Some(format!("Failed to write to OS clipboard: {}", error));
+                            Some(format!("Failed to access OS clipboard: {}", error));
                     }
                 }
-                Err(error) => {
-                    *app_state.latest_error.lock().unwrap() =
-                        Some(format!("Failed to access OS clipboard: {}", error));
-                }
-            },
+            }
             AppAction::DismissError => {
                 *app_state.latest_error.lock().unwrap() = None;
             }
@@ -285,11 +303,25 @@ struct ClipboardItemView {
     id: u64,
     kind: &'static str,
     sensitivity: &'static str,
-    text: Option<String>,
-    file_path: Option<String>,
+    preview: Option<String>,
     width: Option<usize>,
     height: Option<usize>,
     byte_len: usize,
+}
+
+fn make_preview(value: &str, max_chars: usize) -> String {
+    let mut preview = String::new();
+
+    for (index, character) in value.chars().enumerate() {
+        if index >= max_chars {
+            preview.push('…');
+            break;
+        }
+
+        preview.push(character);
+    }
+
+    preview
 }
 
 impl ClipboardItemView {
@@ -304,8 +336,7 @@ impl ClipboardItemView {
                 id: stored.id,
                 kind: "text",
                 sensitivity,
-                text: Some(text.to_string()),
-                file_path: None,
+                preview: Some(make_preview(text, 800)),
                 width: None,
                 height: None,
                 byte_len: text.len(),
@@ -314,8 +345,7 @@ impl ClipboardItemView {
                 id: stored.id,
                 kind: "image",
                 sensitivity,
-                text: None,
-                file_path: None,
+                preview: None,
                 width: Some(*width),
                 height: Some(*height),
                 byte_len: bytes.len(),
@@ -324,8 +354,7 @@ impl ClipboardItemView {
                 id: stored.id,
                 kind: "file",
                 sensitivity,
-                text: None,
-                file_path: Some(path.display().to_string()),
+                preview: Some(make_preview(&path.display().to_string(), 800)),
                 width: None,
                 height: None,
                 byte_len: path.to_string_lossy().len(),
@@ -414,22 +443,9 @@ fn delete_item(id: u64, app_state: tauri::State<'_, Arc<AppState>>) -> Result<()
 
 #[tauri::command]
 fn copy_text_item(id: u64, app_state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
-    let text = {
-        let clipboard = app_state.clipboard.lock().unwrap();
-        let text = clipboard.items().find_map(|stored| match &stored.item {
-            ClipboardItem::Text(text) if stored.id == id => Some(text.clone()),
-            _ => None,
-        });
-        text
-    };
-
-    let Some(text) = text else {
-        return Err("clipboard item is not a text item".into());
-    };
-
     app_state
         .action_tx
-        .send(AppAction::CopyToClipboard(text))
+        .send(AppAction::CopyTextItem(id))
         .map_err(|error| format!("failed to enqueue copy action: {}", error))
 }
 
@@ -442,11 +458,13 @@ fn dismiss_error(app_state: tauri::State<'_, Arc<AppState>>) -> Result<(), Strin
 }
 
 fn spawn_controller_loop(app_state: Arc<AppState>, debouncer: Arc<Mutex<SaveDebouncer>>) {
-    thread::spawn(move || loop {
-        process_actions(&app_state, &debouncer);
-        drain_clipboard_channel(&app_state, &debouncer);
-        drain_persistence_events(&app_state);
-        thread::sleep(Duration::from_millis(100));
+    thread::spawn(move || {
+        while app_state.controller_running.load(Ordering::Relaxed) {
+            process_actions(&app_state, &debouncer);
+            drain_clipboard_channel(&app_state, &debouncer);
+            drain_persistence_events(&app_state);
+            thread::sleep(Duration::from_millis(100));
+        }
     });
 }
 
@@ -493,6 +511,7 @@ fn main() -> tauri::Result<()> {
     let (persistence_event_tx, persistence_event_rx) = mpsc::channel();
 
     let is_capturing = Arc::new(AtomicBool::new(true));
+    let controller_running = Arc::new(AtomicBool::new(true));
 
     listener::spawn_clipboard_listener(tx, is_capturing.clone());
 
@@ -506,6 +525,7 @@ fn main() -> tauri::Result<()> {
         latest_error: Mutex::new(None),
         settings: Mutex::new(AppSettings::default()),
         is_capturing: is_capturing.clone(),
+        controller_running,
     });
 
     let save_debouncer = Arc::new(Mutex::new(SaveDebouncer::new()));
@@ -599,6 +619,7 @@ fn main() -> tauri::Result<()> {
         .run(move |app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let state = app_handle.state::<Arc<AppState>>();
+                state.controller_running.store(false, Ordering::Relaxed);
                 let settings = state.settings.lock().unwrap().clone();
 
                 let (ack_tx, ack_rx) = mpsc::channel();

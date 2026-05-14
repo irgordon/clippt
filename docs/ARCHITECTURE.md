@@ -14,7 +14,8 @@ Clippt uses Path B: a minimal Tauri web UI backed by Rust commands.
 - The frontend is non-authoritative. It renders snapshots returned by `get_app_snapshot` and sends user intent through typed Tauri commands.
 - Tauri commands enqueue `AppAction` values instead of directly writing persistence files.
 - A Rust controller loop in `main.rs` drains `AppAction`, clipboard listener messages, and persistence worker events away from the web render path.
-- The web UI polls state snapshots for display and does not perform disk I/O.
+- The web UI polls state snapshots for display, receives bounded previews instead of full text payloads, and does not perform disk I/O or network requests.
+- `withGlobalTauri` remains enabled because the checked-in UI is a static, framework-free HTML file without a JavaScript bundling step for `@tauri-apps/api` imports. The Tauri allowlist remains narrow and does not enable filesystem, shell, path, HTTP, or updater APIs.
 
 ## Core architecture
 
@@ -40,8 +41,8 @@ The application follows a unidirectional data flow. Clipboard capture, in-memory
 
 - Enforces strict limits on item count and total byte capacity.
 - Assigns stable `u64` item identifiers and advances `next_id` across restore so item identity does not collide after restart.
-- Stores text as `Arc<str>` and images as `Arc<Vec<u8>>`, allowing snapshots to clone references instead of copying large payloads internally.
-- Preserves sensitivity metadata on stored items.
+- Stores text as `Arc<str>` and images as `Arc<Vec<u8>>`; snapshots sent to the frontend expose item IDs, metadata, and bounded previews rather than full text payloads.
+- Preserves sensitivity metadata on stored items and includes that metadata in the persistence format when items are eligible for disk storage.
 - Rejects single items that exceed the configured memory budget.
 
 ### 3. Privacy and settings (`privacy.rs`, `settings.rs`)
@@ -65,7 +66,7 @@ The application follows a unidirectional data flow. Clipboard capture, in-memory
 - Keeps history and settings writes off the UI render path.
 - Receives persistence commands over a worker channel.
 - Reports persistence failures back to the controller through `PersistenceEvent`.
-- Writes JSON and binary image files to process-scoped temporary files, syncs file contents, and renames them into place. This prevents partial final-file writes in normal crash scenarios and reduces persistence corruption risk.
+- Writes JSON and binary image files to `.clippt_` process-scoped temporary files, syncs file contents, renames them into place, and best-effort syncs the parent directory. This prevents partial final-file writes in normal crash scenarios and reduces persistence corruption risk.
 - Cleans stale `.clippt_*.tmp` files.
 - Sweeps orphaned `clipimg_*.bin` files after successful state writes.
 - Provides directory-level persistence functions for testability, with `AppHandle` wrappers used by the application runtime.
@@ -76,8 +77,13 @@ The application follows a unidirectional data flow. Clipboard capture, in-memory
 
 **Characteristics:**
 
-- The frontend reads `AppSnapshot` values through `get_app_snapshot`.
+- The frontend reads `AppSnapshot` values through `get_app_snapshot`; item snapshots contain IDs, type metadata, sensitivity metadata, byte lengths, image dimensions, and bounded previews only.
 - User intent is sent through Tauri commands and converted to `AppAction` values.
-- Clipboard deletion, clearing, settings updates, stored-history deletion, and copy-to-clipboard operations are routed through Rust.
+- Clipboard deletion, clearing, settings updates, stored-history deletion, and copy-to-clipboard operations are routed through Rust. Copy uses item IDs so full text is not sent from JavaScript back to Rust.
 - Render-path persistence work is limited to enqueueing worker commands and draining worker events from the Rust controller loop.
 - The frontend intentionally stays framework-free and small; it is not the source of truth for settings, privacy classification, persistence, or clipboard contents.
+
+
+## Release validation caveats
+
+This repository does not claim production release readiness until signing, notarization, installer validation, CodeQL completion, and clean-platform install tests pass. Ubuntu Noble WebKitGTK 4.1 compatibility aliases may be useful for local validation of Tauri v1, but they are not release proof; Linux release validation should run on Ubuntu 20.04/22.04 or an equivalent clean WebKitGTK 4.0 environment.

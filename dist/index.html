@@ -294,10 +294,10 @@
 
       function renderItemBody(item) {
         if (item.kind === "text") {
-          return escapeHtml(truncate(item.text || "", 800));
+          return escapeHtml(item.preview || "");
         }
         if (item.kind === "file") {
-          return `File: ${escapeHtml(item.filePath || "")}`;
+          return `File: ${escapeHtml(item.preview || "")}`;
         }
         return `Image: ${item.width || 0}×${item.height || 0}`;
       }
