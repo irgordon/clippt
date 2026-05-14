@@ -3415,6 +3415,7 @@ name = "tauri-plugin-egui"
 version = "0.1.0"
 dependencies = [
  "egui",
+ "log",
  "tauri",
 ]
 
