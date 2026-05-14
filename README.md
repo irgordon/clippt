@@ -11,9 +11,8 @@ Clippt is a local-first clipboard manager built with Rust and a minimal Tauri we
 
 ## Current status
 
-Clippt is under production-readiness hardening. Runtime UI rendering has been validated in a headless Linux environment, but production release is still blocked until signing, notarization, installer validation, CodeQL completion, and clean-platform install tests are complete.
+Clippt is under production-readiness hardening. 
 
-Linux validation in Ubuntu Noble may require WebKitGTK 4.1 compatibility aliases for Tauri v1 build scripts. Treat that as a validation workaround only; release CI should use Ubuntu 20.04/22.04 or another proper Tauri v1 WebKitGTK 4.0 environment, followed by clean install testing.
 
 ## Features
 
