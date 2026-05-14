@@ -73,7 +73,9 @@ fn contains_openai_key(text: &str) -> bool {
 fn looks_like_jwt(text: &str) -> bool {
     token_like_words(text).any(|word| {
         let mut parts = word.split('.');
-        let (Some(a), Some(b), Some(c), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
+        let (Some(a), Some(b), Some(c), None) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
             return false;
         };
 

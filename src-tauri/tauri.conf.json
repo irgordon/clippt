@@ -42,11 +42,7 @@
       "longDescription": "Clippt is a local-first clipboard manager with bounded memory, opt-in persistence, and privacy-aware filtering.",
       "externalBin": [],
       "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon.icns",
-        "icons/icon.ico"
+        "icons/icon.png"
       ],
       "macOS": {
         "entitlements": "entitlements.mac.plist",
@@ -68,11 +64,6 @@
           "language": "en-US"
         },
         "nsis": null
-      },
-      "linux": {
-        "deb": {
-          "depends": []
-        }
       }
     },
     "security": {
