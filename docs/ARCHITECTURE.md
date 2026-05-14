@@ -2,11 +2,23 @@
 
 ## Overview
 
-Clippt is a high-performance, cross-platform clipboard manager built with Rust, Tauri, and egui. It is designed around strict domain boundaries, bounded memory use, non-blocking UI rendering, and user-controlled privacy.
+Clippt is a high-performance, cross-platform clipboard manager built with Rust and Tauri v1. The runtime UI is now a minimal Tauri web frontend because the local `tauri-plugin-egui` crate was only a compile-time compatibility shim: it accepted `start_egui(...)`, did not invoke a real renderer, did not paint pixels, did not handle input, and did not integrate with the Tauri window lifecycle.
+
+The abandoned egui bridge was not replaced with a custom native renderer because a correct Tauri v1 + egui path would need ownership of an `egui::Context`, input translation, output handling, tessellation, a painter/renderer, repaint scheduling, and lifecycle integration. The available upstream `tauri-egui` crate provides a real glutin-backed egui window, but its maintained line targets Tauri alpha APIs and the older Tauri v1-compatible release uses a different `eframe` window API and older egui versions rather than Clippt's `window.start_egui(...)` boundary. Rebuilding that bridge locally would be a fragile graphics integration for this recovery pass.
+
+## UI architecture decision
+
+Clippt uses Path B: a minimal Tauri web UI backed by Rust commands.
+
+- Rust remains authoritative for clipboard capture, state mutation, settings, privacy classification, persistence, stored-history deletion, and OS clipboard writes.
+- The frontend is non-authoritative. It renders snapshots returned by `get_app_snapshot` and sends user intent through typed Tauri commands.
+- Tauri commands enqueue `AppAction` values instead of directly writing persistence files.
+- A Rust controller loop in `main.rs` drains `AppAction`, clipboard listener messages, and persistence worker events away from the web render path.
+- The web UI polls state snapshots for display and does not perform disk I/O.
 
 ## Core architecture
 
-The application follows a unidirectional data flow. Clipboard capture, in-memory state, privacy classification, persistence, and rendering are separated so expensive operating-system and disk operations do not block the egui render path.
+The application follows a unidirectional data flow. Clipboard capture, in-memory state, privacy classification, persistence, and rendering are separated so expensive operating-system and disk operations do not block UI rendering.
 
 ### 1. OS clipboard listener (`listener.rs`)
 
@@ -28,7 +40,7 @@ The application follows a unidirectional data flow. Clipboard capture, in-memory
 
 - Enforces strict limits on item count and total byte capacity.
 - Assigns stable `u64` item identifiers and advances `next_id` across restore so item identity does not collide after restart.
-- Stores text as `Arc<str>` and images as `Arc<Vec<u8>>`, allowing render snapshots to clone references instead of copying large payloads.
+- Stores text as `Arc<str>` and images as `Arc<Vec<u8>>`, allowing snapshots to clone references instead of copying large payloads internally.
 - Preserves sensitivity metadata on stored items.
 - Rejects single items that exceed the configured memory budget.
 
@@ -50,7 +62,7 @@ The application follows a unidirectional data flow. Clipboard capture, in-memory
 
 **Characteristics:**
 
-- Keeps history and settings writes off the egui render path.
+- Keeps history and settings writes off the UI render path.
 - Receives persistence commands over a worker channel.
 - Reports persistence failures back to the controller through `PersistenceEvent`.
 - Writes JSON and binary image files to process-scoped temporary files, syncs file contents, and renames them into place. This prevents partial final-file writes in normal crash scenarios and reduces persistence corruption risk.
@@ -58,14 +70,14 @@ The application follows a unidirectional data flow. Clipboard capture, in-memory
 - Sweeps orphaned `clipimg_*.bin` files after successful state writes.
 - Provides directory-level persistence functions for testability, with `AppHandle` wrappers used by the application runtime.
 
-### 5. Render and command loop (`main.rs`, `ui.rs`, `action.rs`)
+### 5. Controller, commands, and frontend (`main.rs`, `action.rs`, `dist/index.html`)
 
-**Role:** The immediate-mode frontend and central controller.
+**Role:** The Rust controller owns mutation; the frontend displays snapshots and emits intent.
 
 **Characteristics:**
 
-- The UI may read state snapshots for rendering, but it does not directly mutate `ClipboardState`.
-- User intent is emitted as `AppAction` values and processed by the controller.
-- Clipboard deletion, clearing, settings updates, and copy-to-clipboard operations are routed through the controller.
-- Render-loop persistence work is limited to enqueueing worker commands and draining worker events.
-- Search performs allocation-free ASCII case-insensitive matching directly over byte windows. For non-ASCII text, it uses exact matching rather than allocating lowercase copies per frame.
+- The frontend reads `AppSnapshot` values through `get_app_snapshot`.
+- User intent is sent through Tauri commands and converted to `AppAction` values.
+- Clipboard deletion, clearing, settings updates, stored-history deletion, and copy-to-clipboard operations are routed through Rust.
+- Render-path persistence work is limited to enqueueing worker commands and draining worker events from the Rust controller loop.
+- The frontend intentionally stays framework-free and small; it is not the source of truth for settings, privacy classification, persistence, or clipboard contents.

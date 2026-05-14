@@ -2,7 +2,7 @@
   <h1>Clippt</h1>
   <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=aa2704" alt="Rust" />
   <img src="https://img.shields.io/badge/Tauri-FFC131?style=for-the-badge&logo=tauri&logoColor=white" alt="Tauri" />
-  <img src="https://img.shields.io/badge/egui-42b983?style=for-the-badge&logo=rust&logoColor=000000" alt="egui" />
+  <img src="https://img.shields.io/badge/Web_UI-HTML%2FCSS%2FJS-42b983?style=for-the-badge" alt="Web UI" />
 </div>
 
 <br />
@@ -16,7 +16,7 @@ Clippt is a modern, local-first clipboard manager built from the ground up for s
 * **Private by Design:** Clippt runs entirely on your local machine. There are no tracking scripts, no telemetry, and no mandatory cloud accounts.
 * **Smart Sensitive Data Filtering:** Clippt automatically detects sensitive information like API keys, private certificates, and authentication tokens. It holds them in memory for immediate use but refuses to write them to your hard drive.
 * **Bounded Memory Guardrails:** Copying massive images or files will not slow down your computer. Clippt strictly manages its own memory footprint, quietly removing the oldest items only when necessary to stay within the limits you set.
-* **Lightning Fast Search:** Instantly retrieve past text, images, and file paths with an optimized search engine that never lags, even with thousands of items in your history.
+* **Minimal Runtime UI:** View capture, persistence, sensitive-filter status, and current clipboard entries in a lightweight Tauri web interface.
 * **Opt-In Persistence:** You decide what gets saved. Run Clippt entirely in memory for a session-based workflow, or enable disk persistence to keep your history across reboots.
 
 ## Installation

@@ -7,7 +7,6 @@ mod persistence_worker;
 mod privacy;
 mod settings;
 mod state;
-mod ui;
 
 use crate::action::AppAction;
 use crate::persistence::load_state;
@@ -17,18 +16,20 @@ use crate::persistence_worker::{
 use crate::privacy::PrivacyGuard;
 use crate::settings::{load_settings, AppSettings};
 use crate::state::{ClipboardItem, ClipboardState, ClipptError, Sensitivity, StoredItem};
+use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
 use std::time::{Duration, Instant};
 use tauri::{
     CustomMenuItem, GlobalShortcutManager, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu,
 };
-use tauri_plugin_egui::EguiExt;
 
 pub struct AppState {
     pub clipboard: Mutex<ClipboardState>,
     pub receiver: Mutex<mpsc::Receiver<Result<ClipboardItem, ClipptError>>>,
     pub action_rx: Mutex<mpsc::Receiver<AppAction>>,
+    pub action_tx: mpsc::Sender<AppAction>,
     pub persistence_tx: mpsc::Sender<PersistenceCommand>,
     pub persistence_event_rx: Mutex<mpsc::Receiver<PersistenceEvent>>,
     pub latest_error: Mutex<Option<String>>,
@@ -265,6 +266,190 @@ fn drain_clipboard_channel(app_state: &Arc<AppState>, debouncer: &Arc<Mutex<Save
     }
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AppSnapshot {
+    settings: AppSettings,
+    capture_status: String,
+    persistence_status: String,
+    sensitive_filter_status: String,
+    latest_error: Option<String>,
+    item_count: usize,
+    current_bytes: usize,
+    items: Vec<ClipboardItemView>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipboardItemView {
+    id: u64,
+    kind: &'static str,
+    sensitivity: &'static str,
+    text: Option<String>,
+    file_path: Option<String>,
+    width: Option<usize>,
+    height: Option<usize>,
+    byte_len: usize,
+}
+
+impl ClipboardItemView {
+    fn from_stored(stored: &StoredItem) -> Self {
+        let sensitivity = match stored.sensitivity {
+            Sensitivity::Normal => "Normal",
+            Sensitivity::Sensitive => "Sensitive",
+        };
+
+        match &stored.item {
+            ClipboardItem::Text(text) => Self {
+                id: stored.id,
+                kind: "text",
+                sensitivity,
+                text: Some(text.to_string()),
+                file_path: None,
+                width: None,
+                height: None,
+                byte_len: text.len(),
+            },
+            ClipboardItem::Image(width, height, bytes) => Self {
+                id: stored.id,
+                kind: "image",
+                sensitivity,
+                text: None,
+                file_path: None,
+                width: Some(*width),
+                height: Some(*height),
+                byte_len: bytes.len(),
+            },
+            ClipboardItem::File(path) => Self {
+                id: stored.id,
+                kind: "file",
+                sensitivity,
+                text: None,
+                file_path: Some(path.display().to_string()),
+                width: None,
+                height: None,
+                byte_len: path.to_string_lossy().len(),
+            },
+        }
+    }
+}
+
+#[tauri::command]
+fn get_app_snapshot(app_state: tauri::State<'_, Arc<AppState>>) -> AppSnapshot {
+    let settings = app_state.settings.lock().unwrap().clone();
+    let latest_error = app_state.latest_error.lock().unwrap().clone();
+
+    let (item_count, current_bytes, items) = {
+        let clipboard = app_state.clipboard.lock().unwrap();
+        let mut items: Vec<_> = clipboard
+            .items()
+            .map(ClipboardItemView::from_stored)
+            .collect();
+        items.reverse();
+
+        (clipboard.len(), clipboard.current_bytes(), items)
+    };
+
+    AppSnapshot {
+        capture_status: if settings.capture_enabled {
+            "Active"
+        } else {
+            "Paused"
+        }
+        .into(),
+        persistence_status: if settings.persist_history {
+            "Persisting"
+        } else {
+            "Memory only"
+        }
+        .into(),
+        sensitive_filter_status: if settings.filter_sensitive {
+            "On"
+        } else {
+            "Off"
+        }
+        .into(),
+        settings,
+        latest_error,
+        item_count,
+        current_bytes,
+        items,
+    }
+}
+
+#[tauri::command]
+fn update_app_settings(
+    settings: AppSettings,
+    app_state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    app_state
+        .action_tx
+        .send(AppAction::UpdateSettings(settings))
+        .map_err(|error| format!("failed to enqueue settings update: {}", error))
+}
+
+#[tauri::command]
+fn clear_in_memory_history(app_state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    app_state
+        .action_tx
+        .send(AppAction::ClearInMemoryHistory)
+        .map_err(|error| format!("failed to enqueue clear action: {}", error))
+}
+
+#[tauri::command]
+fn delete_stored_history(app_state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    app_state
+        .action_tx
+        .send(AppAction::DeleteStoredHistory)
+        .map_err(|error| format!("failed to enqueue stored-history deletion: {}", error))
+}
+
+#[tauri::command]
+fn delete_item(id: u64, app_state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    app_state
+        .action_tx
+        .send(AppAction::DeleteItem(id))
+        .map_err(|error| format!("failed to enqueue item deletion: {}", error))
+}
+
+#[tauri::command]
+fn copy_text_item(id: u64, app_state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    let text = {
+        let clipboard = app_state.clipboard.lock().unwrap();
+        let text = clipboard.items().find_map(|stored| match &stored.item {
+            ClipboardItem::Text(text) if stored.id == id => Some(text.clone()),
+            _ => None,
+        });
+        text
+    };
+
+    let Some(text) = text else {
+        return Err("clipboard item is not a text item".into());
+    };
+
+    app_state
+        .action_tx
+        .send(AppAction::CopyToClipboard(text))
+        .map_err(|error| format!("failed to enqueue copy action: {}", error))
+}
+
+#[tauri::command]
+fn dismiss_error(app_state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    app_state
+        .action_tx
+        .send(AppAction::DismissError)
+        .map_err(|error| format!("failed to enqueue dismiss action: {}", error))
+}
+
+fn spawn_controller_loop(app_state: Arc<AppState>, debouncer: Arc<Mutex<SaveDebouncer>>) {
+    thread::spawn(move || loop {
+        process_actions(&app_state, &debouncer);
+        drain_clipboard_channel(&app_state, &debouncer);
+        drain_persistence_events(&app_state);
+        thread::sleep(Duration::from_millis(100));
+    });
+}
+
 fn build_system_tray() -> SystemTray {
     let show = CustomMenuItem::new("show".to_string(), "Show Clippt");
     let hide = CustomMenuItem::new("hide".to_string(), "Hide");
@@ -315,6 +500,7 @@ fn main() -> tauri::Result<()> {
         clipboard: Mutex::new(ClipboardState::new(100, 50 * 1024 * 1024)),
         receiver: Mutex::new(rx),
         action_rx: Mutex::new(action_rx),
+        action_tx,
         persistence_tx,
         persistence_event_rx: Mutex::new(persistence_event_rx),
         latest_error: Mutex::new(None),
@@ -327,7 +513,15 @@ fn main() -> tauri::Result<()> {
     tauri::Builder::default()
         .manage(app_state.clone())
         .manage(save_debouncer.clone())
-        .plugin(tauri_plugin_egui::EguiPluginBuilder.build())
+        .invoke_handler(tauri::generate_handler![
+            get_app_snapshot,
+            update_app_settings,
+            clear_in_memory_history,
+            delete_stored_history,
+            delete_item,
+            copy_text_item,
+            dismiss_error
+        ])
         .system_tray(build_system_tray())
         .on_system_tray_event(handle_tray_event)
         .setup(move |app| {
@@ -368,13 +562,17 @@ fn main() -> tauri::Result<()> {
                 log::info!("Persistence disabled; stored history was not loaded.");
             }
 
-            let window =
+            let window = if let Some(window) = app.get_window("main") {
+                window
+            } else {
                 tauri::WindowBuilder::new(app, "main", tauri::WindowUrl::App("index.html".into()))
                     .title("Clippt")
                     .inner_size(900.0, 700.0)
-                    .visible(false)
-                    .build()?;
+                    .visible(true)
+                    .build()?
+            };
 
+            let _ = window.show();
             let window_clone = window.clone();
 
             match app
@@ -393,22 +591,7 @@ fn main() -> tauri::Result<()> {
                 Err(error) => log::error!("Failed to register global shortcut: {}", error),
             }
 
-            let ui_state = Arc::new(Mutex::new(ui::ClipptUi::new(app_state.clone(), action_tx)));
-
-            app.manage(ui_state.clone());
-
-            let app_state_clone = app_state.clone();
-            let debouncer_clone = save_debouncer.clone();
-
-            window.start_egui(move |ctx| {
-                process_actions(&app_state_clone, &debouncer_clone);
-                drain_clipboard_channel(&app_state_clone, &debouncer_clone);
-                drain_persistence_events(&app_state_clone);
-
-                if let Ok(mut ui) = ui_state.lock() {
-                    ui.update(ctx);
-                }
-            })?;
+            spawn_controller_loop(app_state.clone(), save_debouncer.clone());
 
             Ok(())
         })
