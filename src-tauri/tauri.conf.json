@@ -4,7 +4,7 @@
     "beforeBuildCommand": "",
     "devPath": "../dist",
     "distDir": "../dist",
-    "withGlobalTauri": false
+    "withGlobalTauri": true
   },
   "package": {
     "productName": "Clippt",
@@ -85,7 +85,7 @@
         "height": 700,
         "resizable": true,
         "fullscreen": false,
-        "visible": false
+        "visible": true
       }
     ]
   }

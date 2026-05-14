@@ -4,6 +4,350 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Clippt</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #111827;
+        color: #f9fafb;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        border: 1px solid #4b5563;
+        border-radius: 0.5rem;
+        background: #374151;
+        color: #f9fafb;
+        cursor: pointer;
+        padding: 0.45rem 0.7rem;
+      }
+
+      button:hover {
+        background: #4b5563;
+      }
+
+      input[type="number"] {
+        width: 8rem;
+      }
+
+      input[type="checkbox"] {
+        transform: translateY(1px);
+      }
+
+      .app {
+        box-sizing: border-box;
+        margin: 0 auto;
+        max-width: 960px;
+        padding: 1.25rem;
+      }
+
+      .header,
+      .status,
+      .toolbar,
+      .settings-row,
+      .item-actions {
+        align-items: center;
+        display: flex;
+        gap: 0.75rem;
+      }
+
+      .header {
+        justify-content: space-between;
+      }
+
+      h1,
+      h2 {
+        margin: 0;
+      }
+
+      .panel {
+        background: rgba(17, 24, 39, 0.78);
+        border: 1px solid #374151;
+        border-radius: 0.9rem;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.25);
+        margin-top: 1rem;
+        padding: 1rem;
+      }
+
+      .status {
+        color: #d1d5db;
+        flex-wrap: wrap;
+        font-size: 0.9rem;
+      }
+
+      .pill {
+        background: #263244;
+        border-radius: 999px;
+        padding: 0.25rem 0.6rem;
+      }
+
+      .error {
+        background: #7f1d1d;
+        border: 1px solid #ef4444;
+        border-radius: 0.75rem;
+        margin-top: 1rem;
+        padding: 0.75rem;
+      }
+
+      .settings-grid {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+
+      .settings-row {
+        justify-content: space-between;
+      }
+
+      .history {
+        display: grid;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+
+      .item {
+        background: #1f2937;
+        border: 1px solid #374151;
+        border-radius: 0.75rem;
+        padding: 0.85rem;
+      }
+
+      .item-meta {
+        color: #9ca3af;
+        font-size: 0.8rem;
+        margin-bottom: 0.5rem;
+      }
+
+      .item-body {
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+      }
+
+      .empty {
+        color: #9ca3af;
+        padding: 2rem 0;
+        text-align: center;
+      }
+
+      .danger {
+        border-color: #b91c1c;
+      }
+    </style>
   </head>
-  <body></body>
+  <body>
+    <main class="app">
+      <div class="header">
+        <h1>Clippt</h1>
+        <button id="settings-toggle" type="button">Settings</button>
+      </div>
+
+      <section class="panel">
+        <div id="status" class="status"></div>
+        <div id="error"></div>
+        <div id="settings" hidden></div>
+        <div id="history"></div>
+      </section>
+    </main>
+
+    <script>
+      const invoke = window.__TAURI__.tauri.invoke;
+      const statusEl = document.getElementById("status");
+      const errorEl = document.getElementById("error");
+      const settingsEl = document.getElementById("settings");
+      const historyEl = document.getElementById("history");
+      const settingsToggle = document.getElementById("settings-toggle");
+
+      let snapshot = null;
+      let showSettings = false;
+
+      settingsToggle.addEventListener("click", () => {
+        showSettings = !showSettings;
+        render();
+      });
+
+      async function refresh() {
+        try {
+          snapshot = await invoke("get_app_snapshot");
+          render();
+        } catch (error) {
+          errorEl.innerHTML = `<div class="error">Failed to load Clippt state: ${escapeHtml(String(error))}</div>`;
+        }
+      }
+
+      async function send(command, args = {}) {
+        await invoke(command, args);
+        await refresh();
+      }
+
+      function render() {
+        if (!snapshot) {
+          return;
+        }
+
+        settingsToggle.textContent = showSettings ? "Close settings" : "Settings";
+        statusEl.innerHTML = `
+          <span class="pill">Capture: ${escapeHtml(snapshot.captureStatus)}</span>
+          <span class="pill">Persistence: ${escapeHtml(snapshot.persistenceStatus)}</span>
+          <span class="pill">Sensitive filter: ${escapeHtml(snapshot.sensitiveFilterStatus)}</span>
+          <span class="pill">Items: ${snapshot.itemCount}</span>
+          <span class="pill">Memory: ${formatBytes(snapshot.currentBytes)}</span>
+        `;
+
+        errorEl.innerHTML = snapshot.latestError
+          ? `<div class="error"><span>${escapeHtml(snapshot.latestError)}</span> <button id="dismiss-error" type="button">Dismiss</button></div>`
+          : "";
+
+        const dismiss = document.getElementById("dismiss-error");
+        if (dismiss) {
+          dismiss.addEventListener("click", () => send("dismiss_error"));
+        }
+
+        settingsEl.hidden = !showSettings;
+        historyEl.hidden = showSettings;
+
+        if (showSettings) {
+          renderSettings();
+        } else {
+          renderHistory();
+        }
+      }
+
+      function renderSettings() {
+        const s = snapshot.settings;
+        settingsEl.innerHTML = `
+          <h2>Privacy and capture settings</h2>
+          <div class="settings-grid">
+            ${checkboxRow("captureEnabled", "Enable clipboard capture", s.capture_enabled)}
+            ${checkboxRow("persistHistory", "Persist history to disk", s.persist_history)}
+            ${checkboxRow("persistText", "Persist text", s.persist_text)}
+            ${checkboxRow("persistImages", "Persist images", s.persist_images)}
+            ${checkboxRow("persistFilePaths", "Persist file paths", s.persist_file_paths)}
+            ${checkboxRow("filterSensitive", "Prevent sensitive text from being persisted", s.filter_sensitive)}
+            ${checkboxRow("clearOnExit", "Delete stored history on exit", s.clear_on_exit)}
+            <label class="settings-row">Maximum items <input id="maxItems" min="1" max="10000" type="number" value="${s.max_items}" /></label>
+            <label class="settings-row">Maximum bytes <input id="maxBytes" min="1" max="1073741824" type="number" value="${s.max_bytes}" /></label>
+          </div>
+          <div class="toolbar" style="margin-top: 1rem">
+            <button id="clear-memory" type="button">Clear in-memory history</button>
+            <button id="delete-stored" class="danger" type="button">Delete stored history now</button>
+          </div>
+          <p class="item-meta">Deleting stored history does not disable future persistence if persistence remains enabled.</p>
+        `;
+
+        for (const field of [
+          "captureEnabled",
+          "persistHistory",
+          "persistText",
+          "persistImages",
+          "persistFilePaths",
+          "filterSensitive",
+          "clearOnExit",
+        ]) {
+          document.getElementById(field).addEventListener("change", saveSettingsFromForm);
+        }
+
+        document.getElementById("maxItems").addEventListener("change", saveSettingsFromForm);
+        document.getElementById("maxBytes").addEventListener("change", saveSettingsFromForm);
+        document.getElementById("clear-memory").addEventListener("click", () => send("clear_in_memory_history"));
+        document.getElementById("delete-stored").addEventListener("click", () => send("delete_stored_history"));
+      }
+
+      function renderHistory() {
+        if (snapshot.items.length === 0) {
+          historyEl.innerHTML = `<div class="empty">Clipboard history is empty</div>`;
+          return;
+        }
+
+        historyEl.innerHTML = `<div class="history">${snapshot.items.map(renderItem).join("")}</div>`;
+
+        for (const button of historyEl.querySelectorAll("[data-delete-id]")) {
+          button.addEventListener("click", () => send("delete_item", { id: Number(button.dataset.deleteId) }));
+        }
+
+        for (const button of historyEl.querySelectorAll("[data-copy-id]")) {
+          button.addEventListener("click", () => send("copy_text_item", { id: Number(button.dataset.copyId) }));
+        }
+      }
+
+      function renderItem(item) {
+        return `
+          <article class="item">
+            <div class="item-meta">#${item.id} · ${escapeHtml(item.kind)} · ${escapeHtml(item.sensitivity)} · ${formatBytes(item.byteLen)}</div>
+            <div class="item-body">${renderItemBody(item)}</div>
+            <div class="item-actions" style="margin-top: 0.75rem">
+              ${item.kind === "text" ? `<button data-copy-id="${item.id}" type="button">Copy text</button>` : ""}
+              <button data-delete-id="${item.id}" type="button">Delete item</button>
+            </div>
+          </article>
+        `;
+      }
+
+      function renderItemBody(item) {
+        if (item.kind === "text") {
+          return escapeHtml(truncate(item.text || "", 800));
+        }
+        if (item.kind === "file") {
+          return `File: ${escapeHtml(item.filePath || "")}`;
+        }
+        return `Image: ${item.width || 0}×${item.height || 0}`;
+      }
+
+      function checkboxRow(id, label, checked) {
+        return `<label class="settings-row">${escapeHtml(label)} <input id="${id}" type="checkbox" ${checked ? "checked" : ""} /></label>`;
+      }
+
+      async function saveSettingsFromForm() {
+        const settings = {
+          capture_enabled: document.getElementById("captureEnabled").checked,
+          persist_history: document.getElementById("persistHistory").checked,
+          persist_text: document.getElementById("persistText").checked,
+          persist_images: document.getElementById("persistImages").checked,
+          persist_file_paths: document.getElementById("persistFilePaths").checked,
+          filter_sensitive: document.getElementById("filterSensitive").checked,
+          clear_on_exit: document.getElementById("clearOnExit").checked,
+          max_items: Math.max(1, Number(document.getElementById("maxItems").value) || 1),
+          max_bytes: Math.max(1, Number(document.getElementById("maxBytes").value) || 1),
+        };
+
+        await send("update_app_settings", { settings });
+      }
+
+      function escapeHtml(value) {
+        return value.replace(/[&<>'"]/g, (character) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          "'": "&#39;",
+          '"': "&quot;",
+        })[character]);
+      }
+
+      function truncate(value, maxLength) {
+        return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
+      }
+
+      function formatBytes(bytes) {
+        if (bytes < 1024) {
+          return `${bytes} B`;
+        }
+        if (bytes < 1024 * 1024) {
+          return `${(bytes / 1024).toFixed(1)} KiB`;
+        }
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+      }
+
+      refresh();
+      window.setInterval(refresh, 1000);
+    </script>
+  </body>
 </html>
