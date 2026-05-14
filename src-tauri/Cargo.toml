@@ -2,21 +2,36 @@
 name = "clippt"
 version = "0.1.0"
 edition = "2021"
-description = "A fast, cross-platform clipboard manager"
+description = "A local-first clipboard manager with bounded memory, opt-in persistence, and privacy-aware filtering"
+authors = ["Clippt Contributors"]
+license = "MIT OR Apache-2.0"
+publish = false
+rust-version = "1.75"
 
 [build-dependencies]
-tauri-build = { version = "1", features = [] }
+tauri-build = "=1.5.6"
 
 [dependencies]
-tauri = { version = "1.6.5", features = ["system-tray", "icon-png"] }
-tauri-plugin-egui = "0.2"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-egui = "0.27"
-arboard = "3.3"
-log = "0.4"
-env_logger = "0.10"
-anyhow = "1.0"
+tauri = { version = "=1.8.1", features = ["system-tray", "icon-png"] }
+tauri-plugin-egui = "=0.1.1"
+egui = "=0.22.0"
+arboard = "=3.6.1"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.145"
+anyhow = "=1.0.100"
+log = "=0.4.28"
+env_logger = { version = "=0.11.8", default-features = false, features = ["auto-color", "humantime"] }
 
 [dev-dependencies]
 tempfile = "=3.23.0"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = true
