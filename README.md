@@ -7,33 +7,47 @@
 
 <br />
 
-Your clipboard history belongs to you. Keep it that way.
+Clippt is a local-first clipboard manager built with Rust and a minimal Tauri web UI. It is designed to keep clipboard history on the local machine, with Rust remaining authoritative for clipboard capture, privacy filtering, settings, persistence, and clipboard actions.
 
-Clippt is a modern, local-first clipboard manager built from the ground up for speed, stability, and absolute privacy. Designed to run silently in the background, it remembers what you copy so you never lose your train of thought, while ensuring your most sensitive data never leaves your control.
+## Current status
+
+Clippt is under production-readiness hardening. Runtime UI rendering has been validated in a headless Linux environment, but production release is still blocked until signing, notarization, installer validation, CodeQL completion, and clean-platform install tests are complete.
+
+Linux validation in Ubuntu Noble may require WebKitGTK 4.1 compatibility aliases for Tauri v1 build scripts. Treat that as a validation workaround only; release CI should use Ubuntu 20.04/22.04 or another proper Tauri v1 WebKitGTK 4.0 environment, followed by clean install testing.
 
 ## Features
 
-* **Private by Design:** Clippt runs entirely on your local machine. There are no tracking scripts, no telemetry, and no mandatory cloud accounts.
-* **Smart Sensitive Data Filtering:** Clippt automatically detects sensitive information like API keys, private certificates, and authentication tokens. It holds them in memory for immediate use but refuses to write them to your hard drive.
-* **Bounded Memory Guardrails:** Copying massive images or files will not slow down your computer. Clippt strictly manages its own memory footprint, quietly removing the oldest items only when necessary to stay within the limits you set.
-* **Minimal Runtime UI:** View capture, persistence, sensitive-filter status, and current clipboard entries in a lightweight Tauri web interface.
-* **Opt-In Persistence:** You decide what gets saved. Run Clippt entirely in memory for a session-based workflow, or enable disk persistence to keep your history across reboots.
+* **Local-first operation:** Clippt runs on your machine without telemetry, tracking scripts, mandatory accounts, cloud sync, or network behavior.
+* **Best-effort sensitive filtering:** Clippt uses lightweight heuristics for common high-risk text patterns such as private keys, API-key-shaped tokens, and JWT-shaped strings. This reduces accidental persistence risk but is not complete secret detection.
+* **Bounded memory guardrails:** Clippt enforces item-count and byte limits for in-memory history and evicts older entries when configured limits require it.
+* **Minimal runtime UI:** The framework-free Tauri web UI renders capture status, persistence status, sensitive-filter status, settings, and clipboard entry previews.
+* **Opt-in persistence:** History persistence is disabled by default. If enabled, Rust decides persistence eligibility from current settings and sensitivity metadata.
 
 ## Installation
 
-Download the latest native installer for macOS, Windows, or Linux from the Releases page.
+Signed and notarized production installers are not yet claimed ready. Until release validation is complete, build and test locally from source.
 
-1. Install the application.
-2. Launch Clippt.
-3. Use your system's global shortcut to bring up your clipboard history from anywhere.
+```bash
+cd src-tauri
+cargo tauri build
+```
 
 ## Configuration
 
-Clippt puts you in control of your data footprint. Access the settings panel to tailor your experience:
-* Toggle clipboard capture on or off at any time.
+Use the settings panel to control Clippt's data footprint:
+
+* Toggle clipboard capture on or off.
 * Enable or disable history persistence.
-* Set exact capacity limits for items and disk space.
-* Clear your memory or delete your stored data with a single click.
+* Choose whether text, images, and file paths may be persisted.
+* Keep best-effort sensitive filtering enabled or disable it explicitly.
+* Set capacity limits for item count and memory bytes.
+* Clear in-memory history or delete stored history.
+
+Deleting stored history does not disable future persistence if persistence remains enabled.
+
+## Architecture
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the Path B web UI architecture and authority-boundary notes.
 
 ## Contributing
 

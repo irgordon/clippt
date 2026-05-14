@@ -1,5 +1,4 @@
 use crate::settings::AppSettings;
-use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub enum AppAction {
@@ -7,6 +6,6 @@ pub enum AppAction {
     ClearInMemoryHistory,
     DeleteStoredHistory,
     UpdateSettings(AppSettings),
-    CopyToClipboard(Arc<str>),
+    CopyTextItem(u64),
     DismissError,
 }

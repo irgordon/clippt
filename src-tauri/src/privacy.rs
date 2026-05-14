@@ -94,3 +94,37 @@ fn is_base64url_like(value: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_common_high_risk_patterns() {
+        assert_eq!(
+            PrivacyGuard::classify("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----"),
+            Some(SensitiveKind::PrivateKeyBlock)
+        );
+        assert_eq!(
+            PrivacyGuard::classify("AKIA1234567890ABCDEF"),
+            Some(SensitiveKind::AwsAccessKeyId)
+        );
+        assert_eq!(
+            PrivacyGuard::classify("ghp_abcdefghijklmnopqrstuvwxyz"),
+            Some(SensitiveKind::GitHubToken)
+        );
+        assert_eq!(
+            PrivacyGuard::classify("sk-abcdefghijklmnopqrstuvwxyz"),
+            Some(SensitiveKind::OpenAiApiKey)
+        );
+        assert_eq!(
+            PrivacyGuard::classify("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.signature"),
+            Some(SensitiveKind::JwtLike)
+        );
+    }
+
+    #[test]
+    fn unicode_text_without_secret_is_not_sensitive() {
+        assert_eq!(PrivacyGuard::classify("hello 👋 clipboard"), None);
+    }
+}

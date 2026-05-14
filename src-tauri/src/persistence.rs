@@ -22,6 +22,21 @@ struct PersistedItem {
     image_file: Option<String>,
     width: Option<usize>,
     height: Option<usize>,
+    sensitivity: Option<String>,
+}
+
+fn sensitivity_name(sensitivity: Sensitivity) -> &'static str {
+    match sensitivity {
+        Sensitivity::Normal => "normal",
+        Sensitivity::Sensitive => "sensitive",
+    }
+}
+
+fn parse_sensitivity(value: Option<&str>) -> Sensitivity {
+    match value {
+        Some("sensitive") => Sensitivity::Sensitive,
+        _ => Sensitivity::Normal,
+    }
 }
 
 pub fn should_persist_item(item: &StoredItem, settings: &AppSettings) -> bool {
@@ -78,6 +93,7 @@ pub fn save_state_to_dir(
                     image_file: None,
                     width: None,
                     height: None,
+                    sensitivity: Some(sensitivity_name(item.sensitivity).to_string()),
                 });
             }
             ClipboardItem::File(path) => {
@@ -89,6 +105,7 @@ pub fn save_state_to_dir(
                     image_file: None,
                     width: None,
                     height: None,
+                    sensitivity: Some(sensitivity_name(item.sensitivity).to_string()),
                 });
             }
             ClipboardItem::Image(width, height, bytes) => {
@@ -114,6 +131,7 @@ pub fn save_state_to_dir(
                     image_file: Some(file_name),
                     width: Some(*width),
                     height: Some(*height),
+                    sensitivity: Some(sensitivity_name(item.sensitivity).to_string()),
                 });
             }
         }
@@ -168,17 +186,21 @@ pub fn load_state_from_dir(cache: &Path) -> anyhow::Result<Vec<StoredItem>> {
             "text" => {
                 let text = item.text.unwrap_or_default();
 
+                let sensitivity = parse_sensitivity(item.sensitivity.as_deref());
+
                 restored.push(StoredItem {
                     id: item.id,
                     item: ClipboardItem::Text(std::sync::Arc::<str>::from(text)),
-                    sensitivity: Sensitivity::Normal,
+                    sensitivity,
                 });
             }
             "file" => {
+                let sensitivity = parse_sensitivity(item.sensitivity.as_deref());
+
                 restored.push(StoredItem {
                     id: item.id,
                     item: ClipboardItem::File(PathBuf::from(item.file.unwrap_or_default())),
-                    sensitivity: Sensitivity::Normal,
+                    sensitivity,
                 });
             }
             "image" => {
@@ -204,6 +226,8 @@ pub fn load_state_from_dir(cache: &Path) -> anyhow::Result<Vec<StoredItem>> {
                     }
                 };
 
+                let sensitivity = parse_sensitivity(item.sensitivity.as_deref());
+
                 restored.push(StoredItem {
                     id: item.id,
                     item: ClipboardItem::Image(
@@ -211,7 +235,7 @@ pub fn load_state_from_dir(cache: &Path) -> anyhow::Result<Vec<StoredItem>> {
                         item.height.unwrap_or(0),
                         std::sync::Arc::new(bytes),
                     ),
-                    sensitivity: Sensitivity::Normal,
+                    sensitivity,
                 });
             }
             other => {
@@ -238,6 +262,12 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     }
 
     fs::rename(&tmp_path, path)?;
+
+    if let Some(parent) = path.parent() {
+        if let Ok(directory) = File::open(parent) {
+            let _ = directory.sync_all();
+        }
+    }
 
     Ok(())
 }

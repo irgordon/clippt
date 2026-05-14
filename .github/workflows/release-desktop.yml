@@ -64,21 +64,6 @@ jobs:
           workspaces: |
             src-tauri -> target
 
-      - name: Create minimal Tauri dist shell
-        shell: bash
-        run: |
-          mkdir -p dist
-          cat > dist/index.html <<'EOF'
-          <!doctype html>
-          <html lang="en">
-            <head>
-              <meta charset="utf-8" />
-              <meta name="viewport" content="width=device-width, initial-scale=1" />
-              <title>Clippt</title>
-            </head>
-            <body></body>
-          </html>
-          EOF
 
       - name: Rust format check
         working-directory: src-tauri

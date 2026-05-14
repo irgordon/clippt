@@ -23,10 +23,10 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             capture_enabled: true,
-            persist_history: true,
+            persist_history: false,
             persist_text: true,
-            persist_images: true,
-            persist_file_paths: true,
+            persist_images: false,
+            persist_file_paths: false,
             filter_sensitive: true,
             clear_on_exit: false,
             max_items: 100,
@@ -72,4 +72,24 @@ fn app_config_dir(app_handle: &AppHandle) -> anyhow::Result<PathBuf> {
 
 fn settings_path(dir: &Path) -> PathBuf {
     dir.join(SETTINGS_FILE_NAME)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_are_privacy_preserving() {
+        let settings = AppSettings::default();
+
+        assert!(settings.capture_enabled);
+        assert!(!settings.persist_history);
+        assert!(settings.persist_text);
+        assert!(!settings.persist_images);
+        assert!(!settings.persist_file_paths);
+        assert!(settings.filter_sensitive);
+        assert!(!settings.clear_on_exit);
+        assert_eq!(settings.max_items, 100);
+        assert_eq!(settings.max_bytes, 50 * 1024 * 1024);
+    }
 }
