@@ -6,4 +6,5 @@ publish = false
 
 [dependencies]
 egui = "=0.22.0"
+log = "=0.4.28"
 tauri = { version = "=1.8.1", default-features = false }

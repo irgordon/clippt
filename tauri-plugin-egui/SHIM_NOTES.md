@@ -16,11 +16,22 @@ The shim currently exposes the following public items:
 - `pub trait EguiExt<R: tauri::Runtime>`
   - `fn start_egui<F>(&self, render: F) -> tauri::Result<()> where F: FnMut(&egui::Context) + Send + 'static`
 - `impl<R: tauri::Runtime> EguiExt<R> for tauri::Window<R>`
-  - `start_egui` currently accepts the callback and returns `Ok(())` while printing a compatibility-shim message.
+  - `start_egui` now creates and owns a persistent `egui::Context`, starts a bounded background bridge loop, and repeatedly invokes the supplied callback while the window exists.
 
 No other public types, macros, extension methods, or features are implemented in this crate.
 
-## What this shim intentionally does not implement
+## Current runtime behavior
+
+- `start_egui(...)` **does invoke the callback** at runtime.
+- The shim **does create and own an `egui::Context`** for each started window.
+- The callback is driven by a small bridge loop that:
+  - runs immediately,
+  - re-runs on a bounded interval of about 16 ms,
+  - and wakes earlier when `egui` requests repaint through `Context::set_request_repaint_callback`.
+- The bridge loop stops when the Tauri window emits `CloseRequested` or `Destroyed`.
+- The shim logs once when the bridge loop starts so runtime callback activation can be confirmed.
+
+## What this shim still does not implement
 
 Based on the current code, this shim intentionally does **not** provide:
 
@@ -30,7 +41,17 @@ Based on the current code, this shim intentionally does **not** provide:
 - A web frontend replacement.
 - Additional runtime permissions.
 - Persistence or clipboard behavior.
-- A real egui render loop integration (the current `start_egui` implementation is a no-op bridge).
+- Real egui painting into the Tauri webview window.
+- Input event translation from Tauri window events into egui input events.
+- A GPU renderer, tessellation backend, or upstream-equivalent render integration.
+
+## Release-readiness status
+
+This shim is still only a **bridge**, not a release-ready egui/Tauri integration.
+
+- Callback scheduling is implemented.
+- Controller and UI callback execution can now be proven at runtime.
+- **Visible egui rendering is still incomplete until a real painter/render backend is integrated.**
 
 ## When this shim should be removed
 
@@ -39,6 +60,11 @@ Remove this shim only after one of the following paths is completed and validate
 1. A compatible upstream egui/Tauri v1 integration is selected and integrated.
 2. The app migrates away from egui to a standard Tauri web frontend.
 3. The app migrates to Tauri v2 with a supported egui integration path.
+
+Removal is appropriate only after the replacement both:
+
+- invokes the Clippt render callback at runtime, and
+- visibly renders the egui UI in the application window.
 
 After removing the local shim, validate all of the following successfully:
 

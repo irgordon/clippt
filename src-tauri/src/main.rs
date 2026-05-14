@@ -399,6 +399,8 @@ fn main() -> tauri::Result<()> {
 
             let app_state_clone = app_state.clone();
             let debouncer_clone = save_debouncer.clone();
+            let ui_update_logged = Arc::new(AtomicBool::new(false));
+            let ui_update_logged_clone = ui_update_logged.clone();
 
             window.start_egui(move |ctx| {
                 process_actions(&app_state_clone, &debouncer_clone);
@@ -406,6 +408,9 @@ fn main() -> tauri::Result<()> {
                 drain_persistence_events(&app_state_clone);
 
                 if let Ok(mut ui) = ui_state.lock() {
+                    if !ui_update_logged_clone.swap(true, Ordering::Relaxed) {
+                        log::info!("Clippt egui callback invoked; ui.update(ctx) is running.");
+                    }
                     ui.update(ctx);
                 }
             })?;
