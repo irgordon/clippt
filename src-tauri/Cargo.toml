@@ -12,8 +12,8 @@ rust-version = "1.75"
 tauri-build = "=1.5.6"
 
 [dependencies]
-tauri = { version = "=1.8.1", features = ["system-tray", "icon-png"] }
-tauri-plugin-egui = "=0.1.1"
+tauri = { version = "=1.8.1", features = ["system-tray", "icon-png", "global-shortcut-all", "window-hide", "window-set-focus", "window-show"] }
+tauri-plugin-egui = { path = "../tauri-plugin-egui" }
 egui = "=0.22.0"
 arboard = "=3.6.1"
 serde = { version = "=1.0.228", features = ["derive"] }

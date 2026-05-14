@@ -20,7 +20,10 @@ use crate::state::{ClipboardItem, ClipboardState, ClipptError, Sensitivity, Stor
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{CustomMenuItem, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu};
+use tauri::{
+    CustomMenuItem, GlobalShortcutManager, Manager, SystemTray, SystemTrayEvent, SystemTrayMenu,
+};
+use tauri_plugin_egui::EguiExt;
 
 pub struct AppState {
     pub clipboard: Mutex<ClipboardState>,
@@ -206,10 +209,7 @@ fn process_actions(app_state: &Arc<AppState>, debouncer: &Arc<Mutex<SaveDebounce
     }
 }
 
-fn drain_clipboard_channel(
-    app_state: &Arc<AppState>,
-    debouncer: &Arc<Mutex<SaveDebouncer>>,
-) {
+fn drain_clipboard_channel(app_state: &Arc<AppState>, debouncer: &Arc<Mutex<SaveDebouncer>>) {
     let mut drained = Vec::new();
 
     {
@@ -240,8 +240,9 @@ fn drain_clipboard_channel(
                         && settings.persist_history
                         && settings.filter_sensitive
                     {
-                        *error_lock =
-                            Some("Sensitive item kept in memory and excluded from persistence.".into());
+                        *error_lock = Some(
+                            "Sensitive item kept in memory and excluded from persistence.".into(),
+                        );
                     }
 
                     clipboard.push(item, sensitivity);
@@ -326,7 +327,7 @@ fn main() -> tauri::Result<()> {
     tauri::Builder::default()
         .manage(app_state.clone())
         .manage(save_debouncer.clone())
-        .plugin(tauri_plugin_egui::EguiPluginBuilder::default().build())
+        .plugin(tauri_plugin_egui::EguiPluginBuilder.build())
         .system_tray(build_system_tray())
         .on_system_tray_event(handle_tray_event)
         .setup(move |app| {
@@ -367,15 +368,12 @@ fn main() -> tauri::Result<()> {
                 log::info!("Persistence disabled; stored history was not loaded.");
             }
 
-            let window = tauri::WindowBuilder::new(
-                app,
-                "main",
-                tauri::WindowUrl::App("index.html".into()),
-            )
-            .title("Clippt")
-            .inner_size(900.0, 700.0)
-            .visible(false)
-            .build()?;
+            let window =
+                tauri::WindowBuilder::new(app, "main", tauri::WindowUrl::App("index.html".into()))
+                    .title("Clippt")
+                    .inner_size(900.0, 700.0)
+                    .visible(false)
+                    .build()?;
 
             let window_clone = window.clone();
 
@@ -395,10 +393,7 @@ fn main() -> tauri::Result<()> {
                 Err(error) => log::error!("Failed to register global shortcut: {}", error),
             }
 
-            let ui_state = Arc::new(Mutex::new(ui::ClipptUi::new(
-                app_state.clone(),
-                action_tx,
-            )));
+            let ui_state = Arc::new(Mutex::new(ui::ClipptUi::new(app_state.clone(), action_tx)));
 
             app.manage(ui_state.clone());
 
@@ -438,11 +433,13 @@ fn main() -> tauri::Result<()> {
                         clipboard.items().cloned().collect()
                     };
 
-                    let _ = state.persistence_tx.send(PersistenceCommand::SaveAndShutdown {
-                        items,
-                        settings,
-                        ack: ack_tx,
-                    });
+                    let _ = state
+                        .persistence_tx
+                        .send(PersistenceCommand::SaveAndShutdown {
+                            items,
+                            settings,
+                            ack: ack_tx,
+                        });
                 } else {
                     log::info!("Persistence disabled; shutting down worker.");
                     let _ = state

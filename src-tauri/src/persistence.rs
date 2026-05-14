@@ -183,7 +183,10 @@ pub fn load_state_from_dir(cache: &Path) -> anyhow::Result<Vec<StoredItem>> {
             }
             "image" => {
                 let Some(file_name) = item.image_file else {
-                    log::warn!("Skipping persisted image id={} with no image file.", item.id);
+                    log::warn!(
+                        "Skipping persisted image id={} with no image file.",
+                        item.id
+                    );
                     continue;
                 };
 
@@ -298,7 +301,10 @@ fn remove_stale_temp_files(cache_dir: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn cleanup_orphaned_images(cache_dir: &Path, active_images: &HashSet<String>) -> anyhow::Result<()> {
+fn cleanup_orphaned_images(
+    cache_dir: &Path,
+    active_images: &HashSet<String>,
+) -> anyhow::Result<()> {
     if !cache_dir.exists() {
         return Ok(());
     }
@@ -427,12 +433,19 @@ mod tests {
 
         fs::write(dir.path().join("clippt_history.json"), b"{}").unwrap();
         fs::write(dir.path().join("clipimg_1.bin"), b"image").unwrap();
-        fs::write(dir.path().join(".clippt_clippt_history.json.123.tmp"), b"tmp").unwrap();
+        fs::write(
+            dir.path().join(".clippt_clippt_history.json.123.tmp"),
+            b"tmp",
+        )
+        .unwrap();
 
         delete_persisted_history_from_dir(dir.path()).unwrap();
 
         assert!(!dir.path().join("clippt_history.json").exists());
         assert!(!dir.path().join("clipimg_1.bin").exists());
-        assert!(!dir.path().join(".clippt_clippt_history.json.123.tmp").exists());
+        assert!(!dir
+            .path()
+            .join(".clippt_clippt_history.json.123.tmp")
+            .exists());
     }
 }

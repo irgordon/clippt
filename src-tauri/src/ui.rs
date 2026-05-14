@@ -15,10 +15,7 @@ pub struct ClipptUi {
 }
 
 impl ClipptUi {
-    pub fn new(
-        app_state: Arc<AppState>,
-        action_tx: std::sync::mpsc::Sender<AppAction>,
-    ) -> Self {
+    pub fn new(app_state: Arc<AppState>, action_tx: std::sync::mpsc::Sender<AppAction>) -> Self {
         Self {
             app_state,
             action_tx,
@@ -277,23 +274,18 @@ impl ClipptUi {
             );
 
             if stored.sensitivity == Sensitivity::Sensitive {
-                ui.label(
-                    RichText::new("Sensitive")
-                        .size(10.0)
-                        .color(Color32::YELLOW),
-                );
+                ui.label(RichText::new("Sensitive").size(10.0).color(Color32::YELLOW));
             }
         });
 
         match &stored.item {
             ClipboardItem::Text(text) => {
-                let display_text: Cow<'_, str> = if let Some((idx, _)) =
-                    text.char_indices().nth(120)
-                {
-                    Cow::Owned(format!("{}...", &text[..idx]))
-                } else {
-                    Cow::Borrowed(text.as_ref())
-                };
+                let display_text: Cow<'_, str> =
+                    if let Some((idx, _)) = text.char_indices().nth(120) {
+                        Cow::Owned(format!("{}...", &text[..idx]))
+                    } else {
+                        Cow::Borrowed(text.as_ref())
+                    };
 
                 let response = ui.button(display_text.as_ref());
 
@@ -314,7 +306,10 @@ impl ClipptUi {
                 if let Some(texture) =
                     self.get_or_create_texture_checked(ui, texture_id, *width, *height, bytes)
                 {
-                    let response = ui.add(egui::Image::new(texture).max_width(250.0));
+                    let size = texture.size_vec2();
+                    let scale = if size.x > 250.0 { 250.0 / size.x } else { 1.0 };
+                    let desired_size = size * scale;
+                    let response = ui.add(egui::Image::new(texture.id(), desired_size));
 
                     if response.secondary_clicked() {
                         let _ = self.action_tx.send(AppAction::DeleteItem(stored.id));
@@ -360,7 +355,9 @@ impl ClipptUi {
         height: usize,
         data: &Arc<Vec<u8>>,
     ) -> Option<&TextureHandle> {
-        let expected = width.checked_mul(height).and_then(|pixels| pixels.checked_mul(4));
+        let expected = width
+            .checked_mul(height)
+            .and_then(|pixels| pixels.checked_mul(4));
 
         if expected != Some(data.len()) {
             log::warn!(

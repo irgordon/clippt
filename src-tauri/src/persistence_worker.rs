@@ -56,7 +56,8 @@ pub fn spawn_persistence_worker(
                                 .map(|last| now.duration_since(last) > Duration::from_secs(5))
                                 .unwrap_or(true)
                             {
-                                let _ = event_tx.send(PersistenceEvent::SaveFailed(error.to_string()));
+                                let _ =
+                                    event_tx.send(PersistenceEvent::SaveFailed(error.to_string()));
                                 last_save_failed_at = Some(now);
                             }
                         }
@@ -64,17 +65,21 @@ pub fn spawn_persistence_worker(
                 }
                 PersistenceCommand::SaveSettings { settings } => {
                     if let Err(error) = save_settings(&app_handle, &settings) {
-                        let _ = event_tx.send(PersistenceEvent::SettingsSaveFailed(error.to_string()));
+                        let _ =
+                            event_tx.send(PersistenceEvent::SettingsSaveFailed(error.to_string()));
                     }
                 }
-                PersistenceCommand::DeleteStoredHistory => match delete_persisted_history(&app_handle) {
-                    Ok(_) => {
-                        let _ = event_tx.send(PersistenceEvent::StoredHistoryDeleted);
+                PersistenceCommand::DeleteStoredHistory => {
+                    match delete_persisted_history(&app_handle) {
+                        Ok(_) => {
+                            let _ = event_tx.send(PersistenceEvent::StoredHistoryDeleted);
+                        }
+                        Err(error) => {
+                            let _ =
+                                event_tx.send(PersistenceEvent::DeleteFailed(error.to_string()));
+                        }
                     }
-                    Err(error) => {
-                        let _ = event_tx.send(PersistenceEvent::DeleteFailed(error.to_string()));
-                    }
-                },
+                }
                 PersistenceCommand::SaveAndShutdown {
                     items,
                     settings,
