@@ -1,3 +1,7 @@
+//! Compatibility shim for Clippt's current Tauri v1 + egui integration.
+//!
+//! See `../SHIM_NOTES.md` for scope, API surface, and removal criteria.
+
 use tauri::{plugin::TauriPlugin, Runtime};
 
 /// Minimal compatibility shim that preserves the existing Clippt architecture
